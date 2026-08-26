@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+  <meta name="theme-color" content="#121212">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="Elo Bar">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Elo Bar">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-src https://script.google.com https://*.googleusercontent.com; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https://script.google.com;">
+  <title>Elo Bar</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main id="shell" class="shell" data-state="booting">
+    <iframe
+      id="eloApp"
+      class="app-frame"
+      title="Elo Bar"
+      allow="clipboard-read; clipboard-write"
+      referrerpolicy="strict-origin-when-cross-origin"
+    ></iframe>
+
+    <section id="splash" class="splash" role="status" aria-live="polite" aria-label="Carregando Elo Bar">
+      <img class="splash-logo" src="./logo-splash.png" alt="Elo Bar">
+      <div class="loader" aria-hidden="true"><span></span></div>
+      <p id="splashText">Abrindo Elo Bar…</p>
+      <button id="retryBtn" class="retry" type="button" hidden>Tentar novamente</button>
+    </section>
+
+    <div id="networkBadge" class="network-badge" role="status" aria-live="polite" hidden>Sem conexão</div>
+    <div id="updateBadge" class="update-badge" role="status" aria-live="polite" hidden>Atualizando a casca…</div>
+  </main>
+
+  <noscript>O Elo Bar precisa de JavaScript habilitado.</noscript>
+  <script src="./app.js" defer></script>
+</body>
+</html>
