@@ -7,12 +7,10 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Message;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -21,73 +19,68 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public final class MainActivity extends Activity {
     private static final String START_URL = "https://edsonmp7.github.io/EloBar-PWA/";
     private static final int FILE_CHOOSER_REQUEST = 1907;
 
+    private FrameLayout root;
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileChooser;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        configureWindow();
+        try {
+            configureWindow();
+            createRoot();
+            createWebView();
+            configureWebView();
 
-        FrameLayout root = new FrameLayout(this);
+            if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
+                webView.loadUrl(START_URL);
+            }
+        } catch (Throwable error) {
+            showFatalError(error);
+        }
+    }
+
+    private void createRoot() {
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(18, 18, 18));
+        setContentView(root);
+    }
 
+    private void createWebView() {
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(18, 18, 18));
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
-        setContentView(root);
-
-        configureWebView();
-
-        if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
-            webView.loadUrl(START_URL);
-        }
     }
 
     private void configureWindow() {
         Window window = getWindow();
         window.setStatusBarColor(Color.rgb(18, 18, 18));
         window.setNavigationBarColor(Color.rgb(18, 18, 18));
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false);
-            WindowInsetsController controller = window.getInsetsController();
-            if (controller != null) {
-                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                controller.setSystemBarsBehavior(
-                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                );
-            }
-        } else {
-            window.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            );
-        }
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
     }
 
     @SuppressWarnings("SetJavaScriptEnabled")
     private void configureWebView() {
-        boolean debuggable = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-        WebView.setWebContentsDebuggingEnabled(debuggable);
-
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
@@ -96,9 +89,9 @@ public final class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setTextZoom(100);
-        settings.setSupportMultipleWindows(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setUserAgentString(settings.getUserAgentString() + " EloBarAndroid/1.0.0");
+        settings.setSupportMultipleWindows(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setUserAgentString(settings.getUserAgentString() + " EloBarAndroid/1.0.1");
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
@@ -115,15 +108,20 @@ public final class MainActivity extends Activity {
         );
     }
 
-    private boolean isShellUrl(Uri uri) {
+    private boolean isInternalUrl(Uri uri) {
         if (uri == null) return false;
         String scheme = uri.getScheme();
         String host = uri.getHost();
-        String path = uri.getPath();
-        return "https".equalsIgnoreCase(scheme)
-                && "edsonmp7.github.io".equalsIgnoreCase(host)
-                && path != null
-                && (path.equals("/EloBar-PWA") || path.startsWith("/EloBar-PWA/"));
+        if (!"https".equalsIgnoreCase(scheme) || host == null) return false;
+
+        if ("edsonmp7.github.io".equalsIgnoreCase(host)) {
+            String path = uri.getPath();
+            return path != null && (path.equals("/EloBar-PWA") || path.startsWith("/EloBar-PWA/"));
+        }
+
+        return "script.google.com".equalsIgnoreCase(host)
+                || host.endsWith(".googleusercontent.com")
+                || host.endsWith(".google.com");
     }
 
     private boolean openExternal(Uri uri) {
@@ -155,12 +153,32 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void showFatalError(Throwable error) {
+        try {
+            if (root == null) createRoot();
+            root.removeAllViews();
+            TextView message = new TextView(this);
+            message.setTextColor(Color.WHITE);
+            message.setTextSize(16f);
+            message.setGravity(Gravity.CENTER);
+            message.setPadding(40, 40, 40, 40);
+            String detail = error == null ? "Erro desconhecido" : error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage());
+            message.setText("Elo Bar não conseguiu iniciar.\n\n" + detail + "\n\nEnvie esta tela para o suporte.");
+            root.addView(message, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+            ));
+        } catch (Throwable ignored) {
+            Toast.makeText(this, "Falha ao iniciar o Elo Bar.", Toast.LENGTH_LONG).show();
+        }
+    }
+
     private final class EloBarWebViewClient extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             if (!request.isForMainFrame()) return false;
             Uri uri = request.getUrl();
-            if (isShellUrl(uri) || "about".equalsIgnoreCase(uri.getScheme()) || "blob".equalsIgnoreCase(uri.getScheme())) {
+            if (isInternalUrl(uri) || "about".equalsIgnoreCase(uri.getScheme()) || "blob".equalsIgnoreCase(uri.getScheme())) {
                 return false;
             }
             return openExternal(uri);
@@ -169,7 +187,7 @@ public final class MainActivity extends Activity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             Uri uri = Uri.parse(url);
-            if (isShellUrl(uri) || url.startsWith("about:") || url.startsWith("blob:")) {
+            if (isInternalUrl(uri) || url.startsWith("about:") || url.startsWith("blob:")) {
                 return false;
             }
             return openExternal(uri);
@@ -195,42 +213,6 @@ public final class MainActivity extends Activity {
                 return false;
             }
         }
-
-        @Override
-        public boolean onCreateWindow(
-                WebView view,
-                boolean isDialog,
-                boolean isUserGesture,
-                Message resultMsg
-        ) {
-            WebView popup = new WebView(MainActivity.this);
-            popup.setWebViewClient(new WebViewClient() {
-                @Override
-                public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                    openExternal(request.getUrl());
-                    destroyPopup(view);
-                    return true;
-                }
-
-                @Override
-                public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                    openExternal(Uri.parse(url));
-                    destroyPopup(view);
-                    return true;
-                }
-            });
-
-            WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-            transport.setWebView(popup);
-            resultMsg.sendToTarget();
-            return true;
-        }
-
-        private void destroyPopup(WebView popup) {
-            popup.stopLoading();
-            popup.loadUrl("about:blank");
-            popup.destroy();
-        }
     }
 
     @Override
@@ -249,8 +231,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        configureWindow();
-        if (webView != null) webView.onResume();
+        try {
+            configureWindow();
+            if (webView != null) webView.onResume();
+        } catch (Throwable ignored) {}
     }
 
     @Override
