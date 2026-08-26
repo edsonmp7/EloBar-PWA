@@ -14,20 +14,24 @@ import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public final class MainActivity extends Activity {
-    private static final String START_URL = "https://edsonmp7.github.io/EloBar-PWA/";
+    private static final String START_URL = "https://script.google.com/macros/s/AKfycbyd7UHyQFJA4SsFZuKWmAO___NnfGXq0oNB0M0NWnG2hhLmPHcKTL_ck4yDgB4IqSkOnQ/exec?shell=android-native";
     private static final int FILE_CHOOSER_REQUEST = 1907;
 
     private FrameLayout root;
     private WebView webView;
+    private View splashView;
     private ValueCallback<Uri[]> pendingFileChooser;
 
     @Override
@@ -37,10 +41,13 @@ public final class MainActivity extends Activity {
             configureWindow();
             createRoot();
             createWebView();
+            createSplash();
             configureWebView();
 
             if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
                 webView.loadUrl(START_URL);
+            } else {
+                hideSplash(300L);
             }
         } catch (Throwable error) {
             showFatalError(error);
@@ -60,6 +67,55 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
+    }
+
+    private void createSplash() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER);
+        panel.setBackgroundColor(Color.rgb(18, 18, 18));
+        panel.setPadding(dp(28), dp(28), dp(28), dp(28));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(com.eloclub.elobar.R.drawable.ic_launcher);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        panel.addView(logo, new LinearLayout.LayoutParams(dp(220), dp(220)));
+
+        TextView text = new TextView(this);
+        text.setText("Abrindo Elo Bar…");
+        text.setTextColor(Color.rgb(210, 210, 210));
+        text.setTextSize(14f);
+        text.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        textParams.topMargin = dp(18);
+        panel.addView(text, textParams);
+
+        splashView = panel;
+        root.addView(panel, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void hideSplash(long delayMs) {
+        if (splashView == null || splashView.getVisibility() != View.VISIBLE) return;
+        splashView.postDelayed(() -> {
+            if (splashView == null) return;
+            splashView.animate()
+                    .alpha(0f)
+                    .setDuration(180L)
+                    .withEndAction(() -> {
+                        if (splashView != null) splashView.setVisibility(View.GONE);
+                    })
+                    .start();
+        }, delayMs);
     }
 
     private void configureWindow() {
@@ -91,7 +147,6 @@ public final class MainActivity extends Activity {
         settings.setTextZoom(100);
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " EloBarAndroid/1.0.1");
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
@@ -114,14 +169,41 @@ public final class MainActivity extends Activity {
         String host = uri.getHost();
         if (!"https".equalsIgnoreCase(scheme) || host == null) return false;
 
-        if ("edsonmp7.github.io".equalsIgnoreCase(host)) {
-            String path = uri.getPath();
-            return path != null && (path.equals("/EloBar-PWA") || path.startsWith("/EloBar-PWA/"));
-        }
+        return "script.google.com".equalsIgnoreCase(host)
+                || "accounts.google.com".equalsIgnoreCase(host)
+                || host.endsWith(".googleusercontent.com")
+                || host.equalsIgnoreCase("googleusercontent.com");
+    }
 
+    private boolean isAppsScriptSurface(Uri uri) {
+        if (uri == null || uri.getHost() == null) return false;
+        String host = uri.getHost();
         return "script.google.com".equalsIgnoreCase(host)
                 || host.endsWith(".googleusercontent.com")
-                || host.endsWith(".google.com");
+                || host.equalsIgnoreCase("googleusercontent.com");
+    }
+
+    private boolean isGoogleLogin(Uri uri) {
+        return uri != null
+                && uri.getHost() != null
+                && "accounts.google.com".equalsIgnoreCase(uri.getHost());
+    }
+
+    private void hideAppsScriptWarningBar() {
+        if (webView == null) return;
+        String js = "(function(){"
+                + "function hide(){"
+                + "var w=document.getElementById('warning');"
+                + "var t=document.getElementById('warning-text');"
+                + "if(w){var r=w.closest&&w.closest('tr');if(r)r.style.display='none';else w.style.display='none';}"
+                + "if(t){var s=(t.textContent||'').toLowerCase();"
+                + "if(s.indexOf('google apps script')>=0){var p=t.closest&&t.closest('tr');if(p)p.style.display='none';}}"
+                + "}"
+                + "hide();"
+                + "try{new MutationObserver(hide).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}"
+                + "setTimeout(hide,150);setTimeout(hide,600);setTimeout(hide,1600);"
+                + "})();";
+        webView.evaluateJavascript(js, null);
     }
 
     private boolean openExternal(Uri uri) {
@@ -161,7 +243,7 @@ public final class MainActivity extends Activity {
             message.setTextColor(Color.WHITE);
             message.setTextSize(16f);
             message.setGravity(Gravity.CENTER);
-            message.setPadding(40, 40, 40, 40);
+            message.setPadding(dp(40), dp(40), dp(40), dp(40));
             String detail = error == null ? "Erro desconhecido" : error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage());
             message.setText("Elo Bar não conseguiu iniciar.\n\n" + detail + "\n\nEnvie esta tela para o suporte.");
             root.addView(message, new FrameLayout.LayoutParams(
@@ -191,6 +273,26 @@ public final class MainActivity extends Activity {
                 return false;
             }
             return openExternal(uri);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            Uri uri = Uri.parse(url);
+            if (isAppsScriptSurface(uri)) {
+                hideAppsScriptWarningBar();
+                hideSplash(450L);
+            } else if (isGoogleLogin(uri)) {
+                hideSplash(120L);
+            }
+        }
+
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            super.onReceivedError(view, request, error);
+            if (request != null && request.isForMainFrame()) {
+                hideSplash(100L);
+            }
         }
     }
 
