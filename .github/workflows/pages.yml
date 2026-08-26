@@ -45,10 +45,18 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
+      - name: Stage only public PWA assets
+        shell: bash
+        run: |
+          rm -rf _site
+          mkdir -p _site/icons
+          cp index.html app.js styles.css sw.js manifest.webmanifest logo-splash.png _site/
+          cp icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png _site/icons/
+          touch _site/.nojekyll
       - name: Upload PWA artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: _site
       - name: Deploy Android PWA
         id: deployment
         uses: actions/deploy-pages@v4
