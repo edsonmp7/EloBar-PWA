@@ -42,11 +42,14 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         try {
-            configureWindow();
+            // O conteúdo precisa existir antes de consultar o WindowInsetsController.
+            // Em alguns Samsung/Android 16 o controller ainda é nulo antes do setContentView.
             createRoot();
+            configureWindow();
             createWebView();
             createSplash();
             configureWebView();
+            scheduleSystemBarsAndInsets();
 
             if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
                 webView.loadUrl(START_URL);
@@ -70,14 +73,36 @@ public final class MainActivity extends Activity {
 
         root.setOnApplyWindowInsetsListener((view, windowInsets) -> {
             Insets safe = windowInsets.getInsets(
-                    WindowInsets.Type.systemBars()
-                            | WindowInsets.Type.displayCutout()
-                            | WindowInsets.Type.ime()
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
             );
-            view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+            Insets ime = windowInsets.getInsets(WindowInsets.Type.ime());
+
+            // Mantém o conteúdo entre câmera/status e navegação inferior.
+            // Quando o teclado abrir, usa o maior limite inferior sem somar duas vezes.
+            int bottom = Math.max(safe.bottom, ime.bottom);
+            view.setPadding(safe.left, safe.top, safe.right, bottom);
             return windowInsets;
         });
         root.requestApplyInsets();
+    }
+
+    private void scheduleSystemBarsAndInsets() {
+        if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return;
+
+        root.post(() -> {
+            if (root == null || !root.isAttachedToWindow()) return;
+
+            WindowInsetsController controller = root.getWindowInsetsController();
+            if (controller != null) {
+                controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                controller.setSystemBarsAppearance(
+                        0,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                );
+            }
+            root.requestApplyInsets();
+        });
     }
 
     private void createWebView() {
@@ -144,17 +169,10 @@ public final class MainActivity extends Activity {
         window.setNavigationBarColor(BACKGROUND);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // A raiz recebe os insets e limita o conteúdo à área realmente utilizável.
             window.setDecorFitsSystemWindows(false);
-            WindowInsetsController controller = window.getInsetsController();
-            if (controller != null) {
-                controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                controller.setSystemBarsAppearance(
-                        0,
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-                );
-            }
         } else {
+            // Android 8/9/10: deixa as barras do sistema visíveis e o próprio decor faz o encaixe.
             window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
         }
     }
@@ -277,6 +295,7 @@ public final class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
             ));
+            scheduleSystemBarsAndInsets();
         } catch (Throwable ignored) {
             Toast.makeText(this, "Falha ao iniciar o Elo Bar.", Toast.LENGTH_LONG).show();
         }
@@ -362,7 +381,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         try {
             configureWindow();
-            if (root != null) root.requestApplyInsets();
+            scheduleSystemBarsAndInsets();
             if (webView != null) webView.onResume();
         } catch (Throwable ignored) {}
     }
