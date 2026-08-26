@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -11,6 +12,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -28,6 +31,7 @@ import android.widget.Toast;
 public final class MainActivity extends Activity {
     private static final String START_URL = "https://script.google.com/macros/s/AKfycbyd7UHyQFJA4SsFZuKWmAO___NnfGXq0oNB0M0NWnG2hhLmPHcKTL_ck4yDgB4IqSkOnQ/exec?shell=android-native";
     private static final int FILE_CHOOSER_REQUEST = 1907;
+    private static final int BACKGROUND = Color.rgb(18, 18, 18);
 
     private FrameLayout root;
     private WebView webView;
@@ -56,13 +60,29 @@ public final class MainActivity extends Activity {
 
     private void createRoot() {
         root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(18, 18, 18));
+        root.setBackgroundColor(BACKGROUND);
         setContentView(root);
+        applySafeAreaInsets();
+    }
+
+    private void applySafeAreaInsets() {
+        if (root == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return;
+
+        root.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+            Insets safe = windowInsets.getInsets(
+                    WindowInsets.Type.systemBars()
+                            | WindowInsets.Type.displayCutout()
+                            | WindowInsets.Type.ime()
+            );
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+            return windowInsets;
+        });
+        root.requestApplyInsets();
     }
 
     private void createWebView() {
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.rgb(18, 18, 18));
+        webView.setBackgroundColor(BACKGROUND);
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -73,7 +93,7 @@ public final class MainActivity extends Activity {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setGravity(Gravity.CENTER);
-        panel.setBackgroundColor(Color.rgb(18, 18, 18));
+        panel.setBackgroundColor(BACKGROUND);
         panel.setPadding(dp(28), dp(28), dp(28), dp(28));
 
         ImageView logo = new ImageView(this);
@@ -120,16 +140,23 @@ public final class MainActivity extends Activity {
 
     private void configureWindow() {
         Window window = getWindow();
-        window.setStatusBarColor(Color.rgb(18, 18, 18));
-        window.setNavigationBarColor(Color.rgb(18, 18, 18));
-        window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
+        window.setStatusBarColor(BACKGROUND);
+        window.setNavigationBarColor(BACKGROUND);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                controller.setSystemBarsAppearance(
+                        0,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                );
+            }
+        } else {
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
     }
 
     @SuppressWarnings("SetJavaScriptEnabled")
@@ -335,6 +362,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         try {
             configureWindow();
+            if (root != null) root.requestApplyInsets();
             if (webView != null) webView.onResume();
         } catch (Throwable ignored) {}
     }
