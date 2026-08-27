@@ -3,6 +3,8 @@ package com.eloclub.elobar;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -45,6 +47,7 @@ public final class BackAwareActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         try {
+            configureOrientation();
             createRoot();
             configureWindow();
             createWebView();
@@ -59,6 +62,15 @@ public final class BackAwareActivity extends Activity {
             }
         } catch (Throwable error) {
             showFatalError(error);
+        }
+    }
+
+    private void configureOrientation() {
+        int smallestWidthDp = getResources().getConfiguration().smallestScreenWidthDp;
+        if (smallestWidthDp >= 600) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+        } else {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         }
     }
 
@@ -116,19 +128,8 @@ public final class BackAwareActivity extends Activity {
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_launcher);
         logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        panel.addView(logo, new LinearLayout.LayoutParams(dp(220), dp(220)));
-
-        TextView text = new TextView(this);
-        text.setText("Abrindo Elo Bar…");
-        text.setTextColor(Color.rgb(210, 210, 210));
-        text.setTextSize(14f);
-        text.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        textParams.topMargin = dp(18);
-        panel.addView(text, textParams);
+        int logoSize = dp(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 280 : 220);
+        panel.addView(logo, new LinearLayout.LayoutParams(logoSize, logoSize));
 
         splashView = panel;
         root.addView(panel, new FrameLayout.LayoutParams(
@@ -486,6 +487,13 @@ public final class BackAwareActivity extends Activity {
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        configureWindow();
+        scheduleSystemBarsAndInsets();
     }
 
     @Override
