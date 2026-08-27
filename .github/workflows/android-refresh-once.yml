@@ -1,0 +1,91 @@
+name: Elo Bar - Native Refresh 1.0.6
+
+on:
+  push:
+    branches:
+      - native-refresh-bar-1.0.6
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: native-refresh-bar-1.0.6
+
+      - name: Apply native refresh
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path('android/app/build.gradle')
+          s = gradle.read_text()
+          assert "versionCode 6" in s and "versionName '1.0.5'" in s
+          s = s.replace("versionCode 6", "versionCode 7", 1)
+          s = s.replace("versionName '1.0.5'", "versionName '1.0.6'", 1)
+          gradle.write_text(s)
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          s = manifest.read_text()
+          assert 'android:screenOrientation="portrait"' in s
+          s = s.replace('            android:screenOrientation="portrait"\n', '', 1)
+          manifest.write_text(s)
+
+          java = Path('android/app/src/main/java/com/eloclub/elobar/BackAwareActivity.java')
+          s = java.read_text()
+          assert 'import android.content.Intent;\n' in s
+          s = s.replace('import android.content.Intent;\n', 'import android.content.Intent;\nimport android.content.pm.ActivityInfo;\nimport android.content.res.Configuration;\n', 1)
+          assert '        try {\n            createRoot();' in s
+          s = s.replace('        try {\n            createRoot();', '        try {\n            configureOrientation();\n            createRoot();', 1)
+          marker = '    private void createRoot() {'
+          orientation = '''    private void configureOrientation() {\n        int smallestWidthDp = getResources().getConfiguration().smallestScreenWidthDp;\n        if (smallestWidthDp >= 600) {\n            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);\n        } else {\n            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);\n        }\n    }\n\n'''
+          assert marker in s
+          s = s.replace(marker, orientation + marker, 1)
+
+          text_block = '''        TextView text = new TextView(this);\n        text.setText("Abrindo Elo Bar…");\n        text.setTextColor(Color.rgb(210, 210, 210));\n        text.setTextSize(14f);\n        text.setGravity(Gravity.CENTER);\n        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(\n                ViewGroup.LayoutParams.WRAP_CONTENT,\n                ViewGroup.LayoutParams.WRAP_CONTENT\n        );\n        textParams.topMargin = dp(18);\n        panel.addView(text, textParams);\n\n'''
+          assert text_block in s
+          s = s.replace(text_block, '', 1)
+          assert 'panel.addView(logo, new LinearLayout.LayoutParams(dp(220), dp(220)));' in s
+          s = s.replace('panel.addView(logo, new LinearLayout.LayoutParams(dp(220), dp(220)));', 'int logoSize = dp(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 280 : 220);\n        panel.addView(logo, new LinearLayout.LayoutParams(logoSize, logoSize));', 1)
+
+          resume_marker = '    @Override\n    protected void onResume() {'
+          config_method = '''    @Override\n    public void onConfigurationChanged(Configuration newConfig) {\n        super.onConfigurationChanged(newConfig);\n        configureWindow();\n        scheduleSystemBarsAndInsets();\n    }\n\n'''
+          assert resume_marker in s
+          s = s.replace(resume_marker, config_method + resume_marker, 1)
+          java.write_text(s)
+          PY
+
+          rm .github/workflows/android-refresh-once.yml
+          git config user.name "Elo Android Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add android .github/workflows/android-refresh-once.yml
+          git commit -m "Android 1.0.6: tablet rotation and clean splash"
+          git push origin HEAD:native-refresh-bar-1.0.6
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build APK
+        working-directory: android
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EloBar-Android-1.0.6
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
