@@ -1,5 +1,17 @@
+import java.security.MessageDigest
+
 plugins {
     id 'com.android.application'
+}
+
+def sha256 = { File target ->
+    MessageDigest digest = MessageDigest.getInstance('SHA-256')
+    target.withInputStream { input ->
+        byte[] buffer = new byte[8192]
+        int read
+        while ((read = input.read(buffer)) > 0) digest.update(buffer, 0, read)
+    }
+    digest.digest().encodeHex().toString()
 }
 
 android {
@@ -10,8 +22,8 @@ android {
         applicationId 'com.eloclub.elobar'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '1.0.6'
+        versionCode 8
+        versionName '1.0.7'
     }
 
     buildTypes {
@@ -25,4 +37,85 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.core:core-splashscreen:1.0.1'
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+tasks.register('verifyEloBarShell') {
+    doLast {
+        File coreFile = file('src/main/java/com/eloclub/elobar/BackAwareActivity.java')
+        File loaderFile = file('src/main/java/com/eloclub/elobar/BottleGlassLoaderView.java')
+        File manifestFile = file('src/main/AndroidManifest.xml')
+        File foregroundFile = file('src/main/res/drawable/app_foreground_safe.xml')
+        File adaptiveFile = file('src/main/res/mipmap-anydpi-v26/ic_launcher.xml')
+        File iconSource = file('src/main/res/drawable-nodpi/app_icon_foreground.jpg')
+        File packageIcon = file('src/main/res/mipmap-nodpi/ic_package.jpg')
+        File splashSource = file('src/main/res/drawable-nodpi/app_splash_full.jpg')
+
+        String core = coreFile.getText('UTF-8')
+        String loader = loaderFile.getText('UTF-8')
+        String manifest = manifestFile.getText('UTF-8')
+        String foreground = foregroundFile.getText('UTF-8')
+        String adaptive = adaptiveFile.getText('UTF-8')
+
+        def requireContract = { boolean ok, String message ->
+            if (!ok) throw new GradleException('ANDROID_SHELL_FAIL: ' + message)
+        }
+
+        requireContract(core.contains('SHELL_VERSION = "1.0.7"'), 'versão nativa 1.0.7 ausente')
+        requireContract(core.contains('AKfycbyd7UHyQFJA4SsFZuKWmAO___NnfGXq0oNB0M0NWnG2hhLmPHcKTL_ck4yDgB4IqSkOnQ'), 'WEB_URL do Elo Bar divergente')
+        requireContract(manifest.contains('android:name=".BackAwareActivity"'), 'Activity principal ausente')
+        requireContract(manifest.contains('android:label="@string/app_name"'), 'nome do app não vem do perfil')
+        requireContract(manifest.contains('android:icon="@mipmap/ic_package"'), 'preview do APK não está separado do launcher')
+        requireContract(manifest.contains('android:icon="@mipmap/ic_launcher"'), 'launcher adaptativo não está ligado à Activity')
+        requireContract(manifest.contains('android:usesCleartextTraffic="false"'), 'cleartext precisa permanecer bloqueado')
+        requireContract(!manifest.contains('MANAGE_EXTERNAL_STORAGE'), 'permissão ampla de storage proibida')
+
+        requireContract(core.contains('R.drawable.app_splash_full'), 'splash oficial não está ligada à Activity')
+        requireContract(core.contains('ImageView.ScaleType.FIT_CENTER'), 'splash pode sofrer crop/distorção')
+        requireContract(core.contains('BottleGlassLoaderView'), 'loading garrafa+copo não integrado')
+        requireContract(loader.contains('Garrafa'), 'marca dinâmica do Elo Bar ausente')
+        requireContract(core.contains('Carregando... '), 'texto de carregamento com porcentagem ausente')
+        requireContract(core.contains('dp(4)'), 'barra fina de aproximadamente 4dp ausente')
+        requireContract(core.contains('PAGE_PROGRESS_CEILING = 72'), 'fase de progresso de página divergente')
+        requireContract(core.contains('SHELL_PROGRESS = 88'), 'fase de shell semântico divergente')
+        requireContract(core.contains('MAX_SPLASH_MS = 8000L'), 'timeout de referência divergente')
+        requireContract(core.contains('.home-primary-actions'), 'READINESS_CONTRACT da Home ausente')
+        requireContract(core.contains('.elo-access-gate'), 'READINESS_CONTRACT de ativação ausente')
+        requireContract(core.contains('stableReadyReads >= 2'), 'readiness não exige confirmação estável')
+        requireContract(core.contains('updateLoadingProgress(100)'), '100% não está vinculado ao readiness')
+
+        requireContract(core.contains('webView.setAlpha(0f)'), 'WebView não inicia invisível')
+        requireContract(core.contains('hideAppsScriptChrome'), 'gate anti-flash Apps Script ausente')
+        requireContract(core.contains('WebViewCompat.addDocumentStartJavaScript'), 'anti-flash não é instalado no document-start')
+        requireContract(core.contains('MutationObserver'), 'gate anti-flash não observa reinjeções tardias')
+        requireContract(core.contains('WebView.setWebContentsDebuggingEnabled(false)'), 'debug da WebView deve ficar desligado')
+        requireContract(core.contains('MIXED_CONTENT_NEVER_ALLOW'), 'mixed content deve ficar bloqueado')
+        requireContract(core.contains('settings.setAllowFileAccess(false)'), 'acesso local da WebView deve ficar bloqueado')
+        requireContract(core.contains('handler.cancel()'), 'SSL inválido precisa ser cancelado')
+        requireContract(core.contains('CookieManager.getInstance().flush()'), 'persistência de cookies ausente')
+        requireContract(core.contains('OnBackInvokedDispatcher.PRIORITY_DEFAULT'), 'Voltar Android 13+ ausente')
+        requireContract(core.contains('EXIT_CONFIRM_MS = 2000L'), 'duplo Voltar na raiz divergente')
+
+        requireContract(foreground.count('android:inset=') == 1, 'foreground deve possuir um único android:inset')
+        requireContract(foreground.contains('android:inset="15%"'), 'inset inicial do Elo Bar deve ser 15%')
+        requireContract(!foreground.contains('android:width=') && !foreground.contains('android:height='), 'foreground não pode combinar inset com width/height')
+        requireContract(adaptive.contains('@drawable/app_foreground_safe'), 'Adaptive Icon não usa o wrapper canônico')
+
+        String iconHash = 'd5a6bd0fdf2a037fba9233170462fcef2f49267562cd8e067f97f5d902073080'
+        String splashHash = 'd09d2d49c9197f4c97a396317beaf794dfb1c105b0ba1380fb0e302495e82f8c'
+        requireContract(sha256(iconSource) == iconHash, 'arte fonte do ícone foi alterada')
+        requireContract(sha256(packageIcon) == iconHash, 'ícone de Meus Arquivos/APK divergiu da arte aprovada')
+        requireContract(sha256(splashSource) == splashHash, 'splash oficial foi alterada')
+
+        println 'ANDROID_SHELL_OK - Elo Bar 1.0.7 CANDIDATA'
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('verifyEloBarShell')
 }
