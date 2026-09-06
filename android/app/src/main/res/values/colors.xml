@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="elo_background">#121212</color>
+    <color name="elo_splash_background">#0D0803</color>
+    <color name="app_icon_background">#0F0F0F</color>
     <color name="elo_gold">#D7A72B</color>
 </resources>
