@@ -7,13 +7,19 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/android-debug.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: elobar-android-debug
+  group: elobar-android-debug-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -35,6 +41,10 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Verify canonical shell
+        working-directory: android
+        run: gradle :app:verifyEloBarShell --stacktrace
+
       - name: Build debug APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
@@ -42,7 +52,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: EloBar-Android-debug
+          name: EloBar-Android-1.0.7-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
