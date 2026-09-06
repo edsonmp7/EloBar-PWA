@@ -7,17 +7,21 @@
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
-        android:icon="@drawable/ic_launcher"
-        android:label="Elo Bar"
-        android:roundIcon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_package"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_package"
         android:supportsRtl="true"
-        android:theme="@style/Theme.EloBar"
+        android:theme="@style/Theme.EloBar.Boot"
         android:usesCleartextTraffic="false">
 
         <activity
             android:name=".BackAwareActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode"
             android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.EloBar.Boot"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
