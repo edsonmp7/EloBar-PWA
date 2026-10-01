@@ -3,10 +3,14 @@ package com.eloclub.elobar;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Insets;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -35,12 +39,15 @@ public final class BackAwareActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1907;
     private static final int BACKGROUND = Color.rgb(18, 18, 18);
     private static final long EXIT_CONFIRM_WINDOW_MS = 2000L;
+    private static final String PREFS_NAME = "elo_bar_native_state";
+    private static final String PREF_APP_ORIGIN = "app_origin";
 
     private FrameLayout root;
     private WebView webView;
     private View splashView;
     private ValueCallback<Uri[]> pendingFileChooser;
     private boolean backDispatchInFlight;
+    private boolean offlineFallbackActive;
     private long lastExitBackAt;
 
     @Override
@@ -56,7 +63,8 @@ public final class BackAwareActivity extends Activity {
             scheduleSystemBarsAndInsets();
 
             if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
-                webView.loadUrl(START_URL);
+                if (hasUsableNetwork()) webView.loadUrl(START_URL);
+                else loadOfflineFallback();
             } else {
                 hideSplash(300L);
             }
@@ -193,6 +201,134 @@ public final class BackAwareActivity extends Activity {
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) ->
                 openExternal(Uri.parse(url))
         );
+    }
+
+    private SharedPreferences nativePrefs() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+    }
+
+    private boolean hasUsableNetwork() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (manager == null) return false;
+            Network network = manager.getActiveNetwork();
+            if (network == null) return false;
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
+            if (capabilities == null) return false;
+            return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    && (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+                    || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                    || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void rememberAppOrigin(Uri uri) {
+        if (uri == null || uri.getScheme() == null || uri.getHost() == null) return;
+        if (!isAppsScriptSurface(uri)) return;
+        String origin = uri.getScheme() + "://" + uri.getHost();
+        nativePrefs().edit().putString(PREF_APP_ORIGIN, origin).apply();
+    }
+
+    private String savedAppOrigin() {
+        String value = nativePrefs().getString(PREF_APP_ORIGIN, "");
+        if (value != null && value.startsWith("https://")) return value;
+        Uri start = Uri.parse(START_URL);
+        return start.getScheme() + "://" + start.getHost();
+    }
+
+    private String offlineHtml() {
+        String startUrl = START_URL.replace("\\", "\\\\").replace("'", "\\'");
+        return """
+                <!doctype html>
+                <html lang="pt-BR">
+                <head>
+                  <meta charset="utf-8">
+                  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+                  <meta name="theme-color" content="#121212">
+                  <title>Elo Bar — Offline</title>
+                  <style>
+                    :root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+                    *{box-sizing:border-box}
+                    body{margin:0;background:#121212;color:#f5f5f5;min-height:100vh;display:grid;place-items:center;padding:24px}
+                    .card{width:min(560px,100%);background:#1b1b1b;border:1px solid #343434;border-radius:18px;padding:22px;box-shadow:0 18px 50px #0007}
+                    h1{font-size:22px;margin:0 0 8px}p{color:#c8c8c8;line-height:1.45}
+                    .badge{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:8px 11px;background:#2a2312;color:#f4cf72;font-weight:700}
+                    .state{margin:18px 0;padding:16px;border-radius:14px;background:#151515;border:1px solid #303030}
+                    .state b{display:block;margin-bottom:6px}.state span{color:#cfcfcf}
+                    button{width:100%;border:0;border-radius:12px;padding:13px 16px;font-weight:800;background:#d7b258;color:#151515;font-size:15px}
+                    small{display:block;color:#909090;margin-top:14px;line-height:1.4}
+                  </style>
+                </head>
+                <body>
+                  <main class="card">
+                    <div class="badge">Sem internet</div>
+                    <h1>Elo Bar abriu em modo offline</h1>
+                    <p>As operações já salvas no aparelho continuam preservadas. O sistema completo volta quando a conexão retornar.</p>
+                    <section id="probe" class="state"><b>Verificando armazenamento local…</b><span>Lendo a Durable Outbox deste aparelho.</span></section>
+                    <button id="retry" type="button">Tentar conectar agora</button>
+                    <small>Esta tela não cria venda, não altera estoque, caixa ou financeiro.</small>
+                  </main>
+                  <script>
+                    (function(){
+                      var START_URL='__START_URL__';
+                      var box=document.getElementById('probe');
+                      function setState(title,detail){box.innerHTML='<b>'+title+'</b><span>'+detail+'</span>';}
+                      function reconnect(){
+                        if(!navigator.onLine){setState('Sem conexão','O registro local continua preservado. Ligue a internet para sincronizar.');return;}
+                        location.replace(START_URL);
+                      }
+                      document.getElementById('retry').addEventListener('click',reconnect);
+                      window.addEventListener('online',function(){setTimeout(reconnect,350);});
+                      setInterval(function(){if(navigator.onLine)reconnect();},3000);
+
+                      if(!window.indexedDB){setState('Armazenamento local indisponível','O WebView não disponibilizou IndexedDB nesta abertura.');return;}
+                      var req=indexedDB.open('EloBarLocalV1');
+                      req.onupgradeneeded=function(event){
+                        try{event.target.transaction.abort();}catch(_){}
+                      };
+                      req.onerror=function(){setState('Nenhum estado local legível','Conecte a internet uma vez e tente o teste novamente.');};
+                      req.onsuccess=function(){
+                        var db=req.result;
+                        try{
+                          if(!db.objectStoreNames.contains('outbox')){setState('Fila local não encontrada','Conecte a internet uma vez e tente o teste novamente.');db.close();return;}
+                          var tx=db.transaction('outbox','readonly');
+                          var get=tx.objectStore('outbox').getAll();
+                          get.onerror=function(){setState('Não foi possível ler a fila local','O registro não foi alterado.');};
+                          get.onsuccess=function(){
+                            var rows=(get.result||[]).filter(function(row){return row&&row.scope==='diagnostics-sync-probe';});
+                            rows.sort(function(a,b){return Number(a.localSequence||0)-Number(b.localSequence||0);});
+                            var row=rows.length?rows[rows.length-1]:null;
+                            if(!row){setState('Nenhum teste local encontrado','A casca offline abriu corretamente, mas não encontrou uma sonda pendente neste domínio.');return;}
+                            var status=String(row.status||'LOCAL_PENDING');
+                            if(status==='SYNCED')setState('Sincronização já confirmada','A sonda consta como sincronizada.');
+                            else if(status==='REJECTED')setState('Teste rejeitado',String(row.lastError||'O servidor rejeitou a sonda.'));
+                            else if(status==='NEEDS_RECONCILIATION')setState('Confirmação pendente','A sonda está preservada e aguarda reconciliação quando a rede voltar.');
+                            else if(status==='SYNCING')setState('Sincronização interrompida','A intenção está preservada e o lease será recuperado ao retornar.');
+                            else setState('Salvo no aparelho','A sonda permaneceu na Durable Outbox mesmo após fechar e reabrir o APK offline.');
+                          };
+                          tx.oncomplete=function(){try{db.close();}catch(_){}};
+                        }catch(error){
+                          setState('Não foi possível ler a fila local',String(error&&error.message||error));
+                          try{db.close();}catch(_){}
+                        }
+                      };
+                    })();
+                  </script>
+                </body>
+                </html>
+                """.replace("__START_URL__", startUrl);
+    }
+
+    private void loadOfflineFallback() {
+        if (webView == null) return;
+        offlineFallbackActive = true;
+        String origin = savedAppOrigin();
+        String baseUrl = origin + "/elo-bar-offline/";
+        webView.loadDataWithBaseURL(baseUrl, offlineHtml(), "text/html", "UTF-8", baseUrl);
+        hideSplash(120L);
     }
 
     private boolean isInternalUrl(Uri uri) {
@@ -443,9 +579,13 @@ public final class BackAwareActivity extends Activity {
             super.onPageFinished(view, url);
             Uri uri = Uri.parse(url);
             if (isAppsScriptSurface(uri)) {
-                hideAppsScriptWarningBar();
-                installNativeBackBridge();
-                view.postDelayed(BackAwareActivity.this::installNativeBackBridge, 500L);
+                if (hasUsableNetwork()) {
+                    offlineFallbackActive = false;
+                    rememberAppOrigin(uri);
+                    hideAppsScriptWarningBar();
+                    installNativeBackBridge();
+                    view.postDelayed(BackAwareActivity.this::installNativeBackBridge, 500L);
+                }
                 hideSplash(450L);
             } else if (isGoogleLogin(uri)) {
                 hideSplash(120L);
@@ -455,7 +595,14 @@ public final class BackAwareActivity extends Activity {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
-            if (request != null && request.isForMainFrame()) hideSplash(100L);
+            if (request != null && request.isForMainFrame()) {
+                if (!hasUsableNetwork() && !offlineFallbackActive) {
+                    view.stopLoading();
+                    loadOfflineFallback();
+                } else {
+                    hideSplash(100L);
+                }
+            }
         }
     }
 
@@ -502,7 +649,10 @@ public final class BackAwareActivity extends Activity {
         try {
             configureWindow();
             scheduleSystemBarsAndInsets();
-            if (webView != null) webView.onResume();
+            if (webView != null) {
+                webView.onResume();
+                if (offlineFallbackActive && hasUsableNetwork()) webView.loadUrl(START_URL);
+            }
         } catch (Throwable ignored) {}
     }
 
