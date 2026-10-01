@@ -38,6 +38,8 @@ O projeto usa Java 17, Android Gradle Plugin 8.8.2, `compileSdk 35`, `targetSdk 
 - downloads abrem no manipulador externo;
 - botão Voltar usa o histórico do WebView antes de sair;
 - estado do WebView é restaurado após recriação da Activity;
+- ao iniciar sem internet, abre um fallback offline no mesmo origin lógico da última sessão para ler a Durable Outbox e confirmar intenções locais pendentes;
+- ao retornar a conectividade, o wrapper volta ao Web App oficial para o Sync Engine concluir a sincronização;
 - WebView debug somente em builds `debug`.
 
 ## Atualizações
